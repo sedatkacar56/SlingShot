@@ -1,0 +1,411 @@
+---
+title: "Sling"
+author: "Sedat Kacar"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# 1- LOAD LIBRARIES and Prepare Slingshot object
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(Seurat)
+library(SingleCellExperiment)
+library(ggplot2)
+library(dplyr)
+
+SedatFunctions::rds_function(8)
+
+# Assuming you have a Seurat object named 'seurat_obj'
+sce_obj <- as.SingleCellExperiment(Endo_sickle)
+
+sce_obj <- sce_obj[rowSums(assay(sce_obj, "counts")) > 0, ]
+
+
+
+```
+
+# 2- CALCULATE TRAJECTORIES using slingshot from the UMAP coordinates.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(slingshot)
+pto <- slingshot(reducedDim(sce_obj,'UMAP'), clusterLabels = sce_obj$Concise_new1,
+start.clus = 'gCaps', end.clus = c('aCaps', 'PAECs', 'PVECs', 'gCapC'), spar = 1.1)
+```
+
+
+# 3- Visualizing Slingshot-Inferred Lineage Paths on UMAP Using Minimum Spanning Tree (MST)
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+slsMST <- slingMST(pto, as.df = TRUE)
+
+scater::plotReducedDim(sce_obj, dimred = 'UMAP', colour_by = 'Concise_new1') +
+  ggplot2::geom_point(data = slsMST, aes(x = umap_1, y = umap_2), size = 3, color = "grey15") +
+  ggplot2::geom_path(data = dplyr::arrange(slsMST, Order),
+                     ggplot2::aes(x = umap_1, y = umap_2, group = Lineage)) +
+  ggplot2::labs(title = "Slingshot MST on UMAP", x = "UMAP 1", y = "UMAP 2")
+
+
+```
+
+# 4- VISUALIZE ORIGINAL UMAP
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+
+hvg_genes <- VariableFeatures(Endo_sickle)
+rowData(sce_obj)$highly_variable <- rownames(sce_obj) %in% hvg_genes
+
+
+sce_obj <- sce_obj[rowSums(assay(sce_obj, "counts")) > 0, ]
+
+scater::plotReducedDim(sce_obj, 'UMAP', colour_by = 'Concise_new1', text_by = 'Concise_new1') + theme_bw()
+
+
+```
+
+
+
+# 5- Map the inferred trajectories (lineages) from the cluster-level graph into the actual reduced-dimensional space 
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+emb <- slingshot::embedCurves(pto, reducedDim(sce_obj,'UMAP'))
+emb <- slingshot::slingCurves(emb)
+
+g <- scater::plotReducedDim(sce_obj, 'UMAP', text_by = 'Concise_new1', colour_by='Concise_new1')
+for (path in emb) {
+embedded_curves.df <- data.frame(path$s[path$ord,])
+g <- g + ggplot2::geom_path(data=embedded_curves.df, aes(x=umap_1, y=umap_2), linewidth=1.2)
+}
+print(g)
+
+```
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+sce_obj <- scater::runUMAP( sce_obj, dimred = 'PCA',
+BPPARAM=BiocParallel::MulticoreParam(6),
+ncomponents = 3, name = 'UMAP_3D'
+)
+
+```
+
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, include=FALSE}
+
+#1
+sce.sling <- slingshot::slingshot(sce_obj, reducedDim='PCA', clusterLabels = sce_obj$Concise_new1,
+start.clus = 'gCaps', end.clus = c('aCaps', 'PAECs', 'PVECs', 'gCapC'), spar = 1.1)
+
+#2
+slsMST <- slingshot::slingMST(pto, as.df = TRUE)
+scater::plotReducedDim(sce_obj, dimred='PCA', colour_by = 'Concise_new1') +
+ggplot2::geom_point(data = slsMST, aes(umap_1, umap_2), size = 3, color = "grey15") +
+ggplot2::geom_path(data = slsMST %>% arrange(Order),
+ggplot2::aes(umap_1, umap_2, group = Lineage)) +
+ggplot2::labs(title = "Slingshot MST on UMAP", x = "PCA 1", y = "PCA 2")
+
+```
+
+# 6- Interactive 3D UMAP with Slingshot Lineages Colored by Cluster and Pseudotime
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, include=FALSE}
+#3
+embedded <- slingshot::embedCurves(sce.sling, "UMAP")
+embedded <- slingshot::slingCurves(embedded)
+
+#4
+g <- scater::plotReducedDim(sce.sling, 'UMAP', text_by = 'Concise_new1', colour_by='Concise_new1')
+for (path in embedded) {
+embedded_curves.df <- data.frame(path$s[path$ord,])
+g <- g + ggplot2::geom_path(data=embedded_curves.df, aes(x=umap_1, y=umap_2), linewidth=1.2)
+}
+
+print(g)
+
+#5
+sce.sling$Pseudotime <- rowMeans(slingshot::slingPseudotime(sce.sling), na.rm=TRUE)
+#6
+g <- scater::plotReducedDim(sce.sling, 'UMAP', text_by = 'Concise_new1', colour_by='Pseudotime')
+for (path in embedded) {
+embedded_curves.df <- data.frame(path$s[path$ord,])
+g <- g + ggplot2::geom_path(data=embedded_curves.df, aes(x=umap_1, y=umap_2), linewidth=1.2)
+}
+print(g)
+#7
+embedded <- embedCurves(sce.sling, 'UMAP_3D')
+
+
+```
+
+
+
+# 7- 3D Visualization of Slingshot-Inferred Lineages Colored by Cell Clusters in UMAP Space
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(plotly)
+
+?reducedDim
+plot.df <- as.data.frame(reducedDim( sce.sling, 'UMAP_3D' ) )
+plot.df$cluster <- sce.sling[['Concise_new1']]
+colnames(plot.df) <- c('UMAP1', 'UMAP2', 'UMAP3', 'cluster')
+redDim <- 'UMAP'
+
+p <- plot_ly( ) %>% # colors = trace.colors ) %>%
+  add_trace( data = plot.df,
+             x = ~UMAP1, y = ~UMAP2, z = ~UMAP3,
+             color = ~cluster,
+             type = 'scatter3d',
+             mode = 'markers',
+             marker = list( size = 3, opacity = 1 )
+           )
+
+for (i in 1:4) {
+  embedded_curves.tmp <- slingCurves(embedded)[[i]] # only 1 path
+  embedded_curves.tmp.df <- data.frame(embedded_curves.tmp$s[embedded_curves.tmp$ord,])
+  p <- p %>% 
+    add_trace( data = embedded_curves.tmp.df,
+               x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, 
+               type = 'scatter3d', mode = "lines",
+               name = paste0("Lineage ", i),
+               line = list( width = 5, opacity = 1 )
+             )
+}
+
+p %>% 
+  layout( scene = list( xaxis = list(title = paste0( redDim, '1') ),
+                        yaxis = list(title = paste0( redDim, '2') ),
+                        zaxis = list(title = paste0( redDim, '3') )
+                      )
+        )
+
+```
+
+# 8-Interactive 3D Visualization of Slingshot Trajectories Colored by Pseudotime in UMAP Space
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+plot.df$Pseudotime <- sce.sling$Pseudotime
+
+p <- plot_ly( ) %>% # colors = trace.colors ) %>%
+  add_trace( data = plot.df,
+             x = ~UMAP1, y = ~UMAP2, z = ~UMAP3,
+             type = 'scatter3d',
+             mode = 'markers',
+             showlegend = FALSE,
+             marker = list( color = ~Pseudotime,
+                            size = 3,
+                            colorscale = 'Viridis', # Viridis color scale
+                            colorbar = list( # Add color scale bar,
+                              title = 'Pseudotime',
+                              x = 1.01,       # horizontal position
+                              y = 0.4,        # vertical position
+                              len = 0.8,      # length (0 to 1, relative to plot height)
+                              thickness = 30  # width in pixels
+                            ), 
+                            opacity = 1
+                          )
+           )
+
+for (i in 1:4) {
+  embedded_curves.tmp <- slingCurves(embedded)[[i]] # only 1 path
+  embedded_curves.tmp.df <- data.frame(embedded_curves.tmp$s[embedded_curves.tmp$ord,])
+  p <- p %>% 
+    add_trace( data = embedded_curves.tmp.df,
+               x = ~UMAP1, y = ~UMAP2, z = ~UMAP3, 
+               type = 'scatter3d', mode = "lines",
+               name = paste0("Lineage ", i),
+               line = list( width = 5, opacity = 1 )
+             )
+}
+
+p %>% 
+  layout( scene = list( xaxis = list(title = paste0( redDim, '1') ),
+                        yaxis = list(title = paste0( redDim, '2') ),
+                        zaxis = list(title = paste0( redDim, '3') )
+                      )
+        )
+
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE,include=FALSE}
+sce.sling <- scater::logNormCounts(sce.sling, assay.type="logcounts")
+sce.sling
+
+assayNames(sce.sling)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(TSCAN)
+# scran::testPseudotime(...)
+pseudo <- TSCAN::testPseudotime( sce.sling,  
+                          pseudotime=sce.sling$Pseudotime, 
+                          BPPARAM = BiocParallel::MulticoreParam(6)
+                        )
+```
+
+###  9-Filter by Selecting significant  genes
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+# ensembldb::filter(., FDR < 0.05)
+pseudo.sig <- pseudo %>%
+  as.data.frame() %>%
+  dplyr::filter( FDR < 0.05 ) %>%
+  arrange( FDR ) 
+```
+
+# 10-Visualize top 25 genes on heatmap
+```{r, message=FALSE, warning=FALSE, echo=FALSE, fig.width=12, fig.height=6}
+topgenes <- rownames(pseudo.sig)[1:50]
+
+scater::plotHeatmap(sce.sling, 
+    order_columns_by='Pseudotime', 
+    colour_columns_by="Concise_new1", 
+    features = topgenes,
+    center=TRUE,
+    scale=TRUE)
+```
+
+
+# 11- GENES CHANGING ALONG THE TRAJECTORIES
+
+
+## 11a- EXPRESSION OF TEK w/ individual data points
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+
+# Example for one gene (e.g., topgenes[1])
+gene <- topgenes[39]
+df <- data.frame(
+  pseudotime = sce.sling$Pseudotime,
+  expression = logcounts(sce.sling)[gene, ],
+  cluster = sce.sling$Concise_new1
+)
+
+ggplot2::ggplot(df, aes(x = pseudotime, y = expression, color = cluster)) +
+  ggplot2::geom_point(alpha = 0.5) +
+  ggplot2::geom_smooth(method = "loess", se = FALSE) +
+  ggplot2::labs(title = gene, y = "Log-normalized expression")
+
+```
+
+## 11b- EXPRESSION OF TEK w/o  individual data points
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot2::ggplot(df, aes(x = pseudotime, y = expression, color = cluster)) +
+  ggplot2::geom_smooth(method = "loess", se = FALSE, size = 1.2) +
+  ggplot2::labs(title = gene, y = "Log-normalized expression")
+
+#topgenes
+
+```
+
+
+# 11c- Plotting Gene Expression of Tek (Tie2) on UMAP 
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+
+
+scater::plotReducedDim(sce.sling, dimred = "UMAP", colour_by = topgenes[39])
+
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, eval= FALSE}
+
+gh::gh("POST /user/repos", name = "SlingShot", private = TRUE) #making private repo
+
+getwd()
+
+```
+
+
+
+```{r}
+echo "# 📊 Slingshot Trajectory Inference and Visualization
+
+This repository contains a complete R Markdown workflow for performing pseudotime trajectory inference using **Slingshot** and visualizing it with 2D/3D UMAP projections, pseudotime heatmaps, and gene expression trends.
+
+---
+
+## 📌 Overview
+
+This project demonstrates how to:
+
+- Convert a Seurat object to a `SingleCellExperiment`
+- Run trajectory inference with the `slingshot` package
+- Visualize lineage paths using MST and smooth curves
+- Project lineages onto UMAP (2D and 3D)
+- Color by cluster and pseudotime using `plotly`
+- Detect genes changing along trajectories using `TSCAN`
+- Plot gene expression trends and heatmaps along pseudotime
+
+---
+
+## 📁 File Structure
+
+- `Sling.Rmd`: Main R Markdown file with all steps and visualizations
+- `Sling.html`: Knitted HTML output with embedded plots
+- `/figures/` (optional): Folder for saved figures (if not using `self_contained: true`)
+
+---
+
+## 🧬 Input
+
+A preprocessed **Seurat object** with:
+
+- PCA and UMAP dimensionality reductions
+- Cluster labels (e.g., `Concise_new1`) stored in metadata
+
+---
+
+## 🚀 How to Use
+
+1. Clone this repository or download the `.Rmd` and `.html` files.
+2. Open `Sling.Rmd` in RStudio.
+3. Ensure your Seurat object (e.g., `Endo_sickle`) is available in your environment.
+4. Knit the file to generate the HTML report with embedded trajectory analysis.
+
+---
+
+## 📊 Outputs
+
+- 2D UMAP plots with Slingshot MST and inferred trajectories
+- Interactive 3D UMAP colored by cluster or pseudotime
+- Pseudotime-ordered heatmaps of dynamic genes
+- Smooth gene expression trends across pseudotime for selected markers
+
+---
+
+## 👤 Author
+
+**Sedat Kacar**  
+Postdoctoral Researcher  
+Indiana University School of Medicine  
+Division of Pulmonary, Critical Care, and Sleep Medicine
+
+---
+
+## 📜 License
+
+Released under the MIT License. You may reuse, adapt, and redistribute with appropriate credit.
+" >> README.md
+
+```
+
+
+
+
+
+

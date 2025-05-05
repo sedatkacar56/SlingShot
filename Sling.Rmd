@@ -326,13 +326,13 @@ scater::plotReducedDim(sce.sling, dimred = "UMAP", colour_by = topgenes[39])
 
 gh::gh("POST /user/repos", name = "SlingShot", private = TRUE) #making private repo
 
-getwd()
 
 ```
 
 
 
-```{r}
+```{r, message=FALSE, warning=FALSE, echo=FALSE, eval= FALSE}
+
 echo "# 📊 Slingshot Trajectory Inference and Visualization
 
 This repository contains a complete R Markdown workflow for performing pseudotime trajectory inference using **Slingshot** and visualizing it with 2D/3D UMAP projections, pseudotime heatmaps, and gene expression trends.
@@ -402,8 +402,34 @@ Division of Pulmonary, Critical Care, and Sleep Medicine
 Released under the MIT License. You may reuse, adapt, and redistribute with appropriate credit.
 " >> README.md
 
+
 ```
 
+```{r, message=FALSE, warning=FALSE, echo=FALSE, eval= FALSE}
+commit <- "first commit for slingshot"
+
+git init
+git add .
+git commit -m "first commit"
+
+git branch -M main
+git remote add origin https://github.com/sedatkacar56/SlingShot.git
+git push -u origin main
+
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, eval= FALSE}
+commit <- "first commit for slingshot"
+
+git init
+git add .
+git commit -m "first commit"
+
+git branch -M main
+git remote add origin https://github.com/sedatkacar56/SlingShot.git
+git push -u origin main
+
+```
 
 
 
